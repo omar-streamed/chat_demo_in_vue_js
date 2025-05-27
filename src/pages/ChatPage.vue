@@ -20,7 +20,7 @@
             v-for="friend in chats"
             :key="friend.id"
             @click="createChat(friend)"
-            :class="{ active: activeFriend?._id === friend._id }"
+            :class="{ active: activeFriend?.other._id === friend.other._id }"
           >
             <div class="avatar">
               <img
@@ -161,13 +161,7 @@ function sendMessage() {
       if (response.status === "ok") {
         console.log("Message sent successfully!");
       } else {
-        console.error("Failed to send message:", response.error);
-        Swal.fire({
-          title: "Error",
-          text: "Failed to send message. Please try again.",
-          icon: "error",
-          confirmButtonText: "OK",
-        });
+        console.error("Failed to send message:", response);
       }
     });
 
@@ -216,23 +210,33 @@ onMounted(() => {
     });
   }
 
-  // Listen for incoming messages
-  socket.on("new_message", (message) => {
-    console.log("New message received:", message);
-    if (activeFriend.value && message.chatId === activeFriend.value._id) {
-      messages.value.push(message);
-      scrollToBottom();
-    }
-  });
+
+      // ✅ Listen for messages only once socket is ready
+    socket.on("new_message", (message) => {
+      console.log("📩 New message received:", message);
+      if (activeFriend.value && message.data.chatId === chatId.value) {
+        messages.value.push({
+          sender: message.data.senderId === user._id ? "You" : activeFriend.value.name,
+          content: message.data.content,
+          type: message.data.type,
+          timestamp: new Date().toISOString(), // optional for UI sorting
+        });
+        scrollToBottom();
+      }
+    });
+
+  // ✅ Debug fallback to see ALL socket events
+  // socket.onAny((event, ...args) => {
+  //   console.log("📡 Socket Event:", event, args);
+  // });
 });
 
-socket.on("new_message", (message) => {
-  console.log("New message received:", message);
+onUnmounted(() => {
+  // ✅ Cleanup listeners to avoid memory leaks
+  socket.off("new_message");
 });
 
-// onUnmounted(() => {
-//   socket.off("new_message");
-// });
+
 
 const createChat = async (friend: any) => {
   selectFriend(friend);
@@ -241,6 +245,12 @@ const createChat = async (friend: any) => {
     other: friend.other._id,
   });
   if(response.status === 200) {
+     socket.emit("join-chat", {
+      chatId: response.data.data.chatId,
+      senderId: user._id
+     }, (response) => {
+      console.log('join chat response', response)
+    });
     console.log("Chat created successfully", response.data);
     chatId.value = response.data.data.chatId;
     const res = await axios.get(
