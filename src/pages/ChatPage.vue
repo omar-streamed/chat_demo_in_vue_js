@@ -12,6 +12,30 @@
       </button>
 
       <div class="sidebar-content">
+        <div v-if="chats.lenght">
+          <h3 class="app-title" v-if="!isMobile || showSidebar">chats</h3>
+
+          <div
+            class="user-card"
+            v-for="friend in chats"
+            :key="friend.id"
+            @click="selectFriend(friend)"
+            :class="{ active: activeFriend?._id === friend._id }"
+          >
+            <div class="avatar">
+              <img
+                v-if="friend.profileImage"
+                :src="friend.profileImage"
+                alt="Avatar"
+                class="avatar-img"
+              />
+            </div>
+            <div v-if="!isMobile || showSidebar" class="friend-info">
+              <strong>{{ friend.name }}</strong>
+              <p class="email">{{ friend.email }}</p>
+            </div>
+          </div>
+        </div>
         <div class="app-users">
           <h3 class="app-title" v-if="!isMobile || showSidebar">App Users</h3>
 
@@ -19,27 +43,17 @@
             class="user-card"
             v-for="friend in friends"
             :key="friend.id"
-            @click="selectFriend(friend)"
-            :class="{ active: activeFriend?.id === friend.id }"
+            @click="createChat(friend)"
+            :class="{ active: activeFriend?._id === friend._id }"
           >
-            <div class="avatar">{{ friend.name.charAt(0).toUpperCase() }}</div>
-            <div v-if="!isMobile || showSidebar" class="friend-info">
-              <strong>{{ friend.name }}</strong>
-              <p class="email">{{ friend.email }}</p>
+            <div class="avatar">
+              <img
+                v-if="friend.profileImage"
+                :src="friend.profileImage"
+                alt="Avatar"
+                class="avatar-img"
+              />
             </div>
-          </div>
-        </div>
-        <div>
-          <h3 class="app-title" v-if="!isMobile || showSidebar">chats</h3>
-
-          <div
-            class="user-card"
-            v-for="friend in friends"
-            :key="friend.id"
-            @click="selectFriend(friend)"
-            :class="{ active: activeFriend?.id === friend.id }"
-          >
-            <div class="avatar">{{ friend.name.charAt(0).toUpperCase() }}</div>
             <div v-if="!isMobile || showSidebar" class="friend-info">
               <strong>{{ friend.name }}</strong>
               <p class="email">{{ friend.email }}</p>
@@ -96,16 +110,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from "vue";
+import { ref, nextTick, onMounted } from "vue";
+import axios from "axios";
 import { useAuthCheck } from "../utils/useAuth";
 
-// useAuthCheck()
+useAuthCheck();
 
 const friends = ref([
   { id: 1, name: "Alice", email: "alice@example.com" },
   { id: 2, name: "Bob", email: "bob@example.com" },
   { id: 3, name: "Charlie", email: "charlie@example.com" },
 ]);
+const chats = ref([
+  { id: 1, name: "Alice", email: "alice@example.com" },
+  { id: 2, name: "Bob", email: "bob@example.com" },
+  { id: 3, name: "Charlie", email: "charlie@example.com" },
+]);
+const user = JSON.parse(localStorage.getItem("user") || "{}");
 
 const activeFriend = ref<null | { id: number; name: string; email: string }>(
   null
@@ -139,6 +160,57 @@ function scrollToBottom() {
     }
   });
 }
+
+onMounted(() => {
+  if (user) {
+    const res = axios.get(
+      `http://192.168.31.100:4000/user/getAll/${user.appName}`,
+      {
+        headers: {
+          Authorization: `Bearer ${user.fcmToken}`,
+        },
+      }
+    );
+    res
+      .then((response) => {
+        friends.value = response.data.data;
+      })
+      .catch((error) => {
+        console.error("Error fetching friends:", error);
+      });
+  }
+  if (user) {
+    const response = axios.post(`http://192.168.31.100:4000/user/getAllChats`, {
+      userId: user._id,
+    });
+    response
+      .then((res) => {
+        chats.value = res.data.data;
+      })
+      .catch((error) => {
+        console.error("Error fetching messages:", error);
+      });
+  }
+});
+
+const createChat = async (friend) => {
+  selectFriend(friend);
+  const response = await axios.post('https://chat-module-d7da994f2531.herokuapp.com/user/createChat', {
+    user: user._id,
+    other: friend._id,
+  });
+  if(response.status === 200) {
+    console.log("Chat created successfully" , response.data);
+    const res = await axios.get(
+      `http://192.168.31.100:4000/user/getAllMessages/${response.data.data.chatId}`
+    );
+    messages.value = res.data.data;
+    scrollToBottom();
+  } else {
+    console.error("Failed to create chat");
+  }
+
+}
 </script>
 
 <style scoped>
@@ -163,7 +235,8 @@ function scrollToBottom() {
 }
 .sidebar-content {
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+  gap: 32px;
   width: 100%;
 }
 
@@ -218,6 +291,13 @@ function scrollToBottom() {
   align-items: center;
   justify-content: center;
   margin-right: 12px;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .friend-info {

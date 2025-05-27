@@ -13,34 +13,41 @@
 </template>
 
 <script setup lang="ts">
-import axios from 'axios'
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import axios from "axios";
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import Swal from "sweetalert2";
 
-const username = ref('')
-const email = ref('')
-const appName = ref('')
-const router = useRouter()
+const username = ref("");
+const email = ref("");
+const appName = ref("");
+const router = useRouter();
 
 async function registerUser() {
   try {
-    const response = await axios.post('https://backend.streamedchat.com/user/register', {
-      name: username.value,
-      email: email.value,
-      appName: appName.value,
-      fcmToken: ''
-    })
-
+    const response = await axios.post(
+      "http://192.168.31.100:4000/user/register",
+      {
+        name: username.value,
+        email: email.value,
+        appName: appName.value,
+        fcmToken: "",
+      }
+    );
 
     // Save user info locally (if needed)
-    localStorage.setItem('username', username.value)
-    localStorage.setItem('email', email.value)
+    localStorage.setItem("user", JSON.stringify(response.data?.data));
 
     // Redirect to login or chat page
-    router.push('/')
+    router.push("/");
   } catch (err: any) {
-    console.error('Registration error:', err)
-    error.value = err.response?.data?.message || 'Registration failed'
+    Swal.fire({
+      title: "Oops!",
+      text: "Something went wrong. Please try again.",
+      icon: "error",
+      confirmButtonText: "Retry",
+    });
+    error.value = err.response?.data?.message || "Registration failed";
   }
 }
 </script>
@@ -57,7 +64,7 @@ async function registerUser() {
   justify-content: center;
   align-items: center;
   padding: 20px;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .login-box {
@@ -71,8 +78,8 @@ async function registerUser() {
   /* animation: fadeIn 0.4s ease-in-out; */
   position: absolute;
   top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .login-box h2 {
@@ -112,7 +119,6 @@ async function registerUser() {
   background-color: #2980b9;
 }
 
-
 /* Responsive tweaks */
 @media (max-width: 480px) {
   .login-box {
@@ -131,4 +137,3 @@ async function registerUser() {
   }
 }
 </style>
-

@@ -3,10 +3,10 @@ import { useRouter } from 'vue-router'
 
 export function useAuthCheck() {
   const router = useRouter()
-  const username = localStorage.getItem('username')
-  const email = localStorage.getItem('email')
+  const username = localStorage.getItem('user')
 
-  if (!username || !email) {
+
+  if (!username) {
     router.push('/login')
   }
 }
