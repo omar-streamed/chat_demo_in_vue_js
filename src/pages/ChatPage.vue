@@ -12,27 +12,27 @@
       </button>
 
       <div class="sidebar-content">
-        <div v-if="chats.lenght">
+        <div v-if="chats.length">
           <h3 class="app-title" v-if="!isMobile || showSidebar">chats</h3>
 
           <div
             class="user-card"
             v-for="friend in chats"
             :key="friend.id"
-            @click="selectFriend(friend)"
+            @click="createChat(friend)"
             :class="{ active: activeFriend?._id === friend._id }"
           >
             <div class="avatar">
               <img
-                v-if="friend.profileImage"
-                :src="friend.profileImage"
+                v-if="friend.other?.profileImage"
+                :src="friend.other?.profileImage"
                 alt="Avatar"
                 class="avatar-img"
               />
             </div>
             <div v-if="!isMobile || showSidebar" class="friend-info">
-              <strong>{{ friend.name }}</strong>
-              <p class="email">{{ friend.email }}</p>
+              <strong>{{ friend.other.name }}</strong>
+              <p class="email">{{ friend.other.email }}</p>
             </div>
           </div>
         </div>
@@ -87,7 +87,7 @@
       >
         <div class="messages" ref="messagesRef">
           <div v-for="(msg, index) in messages" :key="index" class="message">
-            <strong>{{ msg.sender }}:</strong> {{ msg.text }}
+            <strong>{{ msg.sender }}:</strong> {{ msg.content }}
           </div>
         </div>
 
@@ -110,48 +110,82 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from "vue";
+import { ref, nextTick, onMounted, onUnmounted } from "vue";
 import axios from "axios";
+import { io } from "socket.io-client";
 import { useAuthCheck } from "../utils/useAuth";
+import Swal from "sweetalert2";
+
 
 useAuthCheck();
 
-const friends = ref([
-  { id: 1, name: "Alice", email: "alice@example.com" },
-  { id: 2, name: "Bob", email: "bob@example.com" },
-  { id: 3, name: "Charlie", email: "charlie@example.com" },
-]);
+const friends = ref([]);
 const chats = ref([
-  { id: 1, name: "Alice", email: "alice@example.com" },
-  { id: 2, name: "Bob", email: "bob@example.com" },
-  { id: 3, name: "Charlie", email: "charlie@example.com" },
 ]);
-const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-const activeFriend = ref<null | { id: number; name: string; email: string }>(
-  null
-);
+const user = JSON.parse(localStorage.getItem("user") || "{}");
+const chatId = ref("");
+const activeFriend = ref<null | { id: number; name: string; email: string; _id?: string }>(null);
 const newMessage = ref("");
-const messages = ref<{ sender: string; text: string }[]>([]);
+const messages = ref<{ sender: string; text: string; chatId?: string }[]>([]);
 const messagesRef = ref<HTMLElement | null>(null);
 
 const showSidebar = ref(false);
 const isMobile = window.innerWidth <= 1024;
+const appName = "My Chat App";
+
+// Setup socket connection
+const socket = io("http://192.168.31.100:4000");
 
 function selectFriend(friend: typeof activeFriend.value) {
   activeFriend.value = friend;
-  messages.value = []; // Replace with real messages in production
-  showSidebar.value = false; // Hide sidebar on mobile after selection
+  messages.value = []; 
+  showSidebar.value = false; 
   scrollToBottom();
 }
 
+
 function sendMessage() {
   if (newMessage.value.trim() && activeFriend.value) {
-    messages.value.push({ sender: username, text: newMessage.value.trim() });
+    const message = {
+      chatId: chatId.value,
+      senderId: user._id,
+      receiverId: activeFriend.value.other._id,
+      type: "text",
+      content: newMessage.value.trim(),
+    };
+
+
+    // Emit message via socket with acknowledgement callback
+    socket.emit("send_message", message, (response) => {
+      if (response.status === "ok") {
+        console.log("Message sent successfully!");
+      } else {
+        console.error("Failed to send message:", response.error);
+        Swal.fire({
+          title: "Error",
+          text: "Failed to send message. Please try again.",
+          icon: "error",
+          confirmButtonText: "OK",
+        });
+      }
+    });
+
+    // Optimistic update: add message immediately to the chat UI
+    messages.value.push({
+      sender: user.name || "You",
+      content: message.content,
+      type: message.type,
+      status: "sending", // track sending status if needed
+      timestamp: new Date().toISOString(), // optional for UI sorting
+    });
+
     newMessage.value = "";
     scrollToBottom();
   }
 }
+
+
 
 function scrollToBottom() {
   nextTick(() => {
@@ -163,55 +197,64 @@ function scrollToBottom() {
 
 onMounted(() => {
   if (user) {
-    const res = axios.get(
-      `http://192.168.31.100:4000/user/getAll/${user.appName}`,
-      {
-        headers: {
-          Authorization: `Bearer ${user.fcmToken}`,
-        },
-      }
-    );
-    res
-      .then((response) => {
-        friends.value = response.data.data;
-      })
-      .catch((error) => {
-        console.error("Error fetching friends:", error);
-      });
-  }
-  if (user) {
-    const response = axios.post(`http://192.168.31.100:4000/user/getAllChats`, {
-      userId: user._id,
+    axios.get(`http://192.168.31.100:4000/user/getAll/${user.appName}`, {
+      headers: {
+        Authorization: `Bearer ${user.fcmToken}`,
+      },
+    }).then((response) => {
+      friends.value = response.data.data;
+    }).catch((error) => {
+      console.error("Error fetching friends:", error);
     });
-    response
-      .then((res) => {
-        chats.value = res.data.data;
-      })
-      .catch((error) => {
-        console.error("Error fetching messages:", error);
-      });
+
+    axios.post(`http://192.168.31.100:4000/user/getAllChats`, {
+      userId: user._id,
+    }).then((res) => {
+      chats.value = res.data.data;
+    }).catch((error) => {
+      console.error("Error fetching messages:", error);
+    });
   }
+
+  // Listen for incoming messages
+  socket.on("new_message", (message) => {
+    console.log("New message received:", message);
+    if (activeFriend.value && message.chatId === activeFriend.value._id) {
+      messages.value.push(message);
+      scrollToBottom();
+    }
+  });
 });
 
-const createChat = async (friend) => {
+socket.on("new_message", (message) => {
+  console.log("New message received:", message);
+});
+
+// onUnmounted(() => {
+//   socket.off("new_message");
+// });
+
+const createChat = async (friend: any) => {
   selectFriend(friend);
   const response = await axios.post('https://chat-module-d7da994f2531.herokuapp.com/user/createChat', {
     user: user._id,
-    other: friend._id,
+    other: friend.other._id,
   });
   if(response.status === 200) {
-    console.log("Chat created successfully" , response.data);
+    console.log("Chat created successfully", response.data);
+    chatId.value = response.data.data.chatId;
     const res = await axios.get(
       `http://192.168.31.100:4000/user/getAllMessages/${response.data.data.chatId}`
     );
+    console.log("Messages fetched:", res.data.data);
     messages.value = res.data.data;
     scrollToBottom();
   } else {
     console.error("Failed to create chat");
   }
-
-}
+};
 </script>
+
 
 <style scoped>
 .chat-page {
