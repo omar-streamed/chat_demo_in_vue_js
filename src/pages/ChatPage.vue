@@ -86,8 +86,18 @@
         v-if="activeFriend && (!isMobile || !showSidebar)"
       >
         <div class="messages" ref="messagesRef">
-          <div v-for="(msg, index) in messages" :key="index" class="message">
-            <strong>{{ msg.sender }}:</strong> {{ msg.content }}
+          <div
+            v-for="(msg, index) in messages"
+            :key="index"
+            :class="[
+              'message',
+              {
+                outgoing: msg.senderId === (user._id || 'You'),
+                incoming: msg.sender !== (user._id || 'You'),
+              },
+            ]"
+          >
+            {{ msg.content }}
           </div>
         </div>
 
@@ -116,16 +126,19 @@ import { io } from "socket.io-client";
 import { useAuthCheck } from "../utils/useAuth";
 import Swal from "sweetalert2";
 
-
 useAuthCheck();
 
 const friends = ref([]);
-const chats = ref([
-]);
+const chats = ref([]);
 
 const user = JSON.parse(localStorage.getItem("user") || "{}");
 const chatId = ref("");
-const activeFriend = ref<null | { id: number; name: string; email: string; _id?: string }>(null);
+const activeFriend = ref<null | {
+  id: number;
+  name: string;
+  email: string;
+  _id?: string;
+}>(null);
 const newMessage = ref("");
 const messages = ref<{ sender: string; text: string; chatId?: string }[]>([]);
 const messagesRef = ref<HTMLElement | null>(null);
@@ -139,11 +152,10 @@ const socket = io("http://192.168.31.100:4000");
 
 function selectFriend(friend: typeof activeFriend.value) {
   activeFriend.value = friend;
-  messages.value = []; 
-  showSidebar.value = false; 
+  messages.value = [];
+  showSidebar.value = false;
   scrollToBottom();
 }
-
 
 function sendMessage() {
   if (newMessage.value.trim() && activeFriend.value) {
@@ -154,7 +166,6 @@ function sendMessage() {
       type: "text",
       content: newMessage.value.trim(),
     };
-
 
     // Emit message via socket with acknowledgement callback
     socket.emit("send_message", message, (response) => {
@@ -167,7 +178,7 @@ function sendMessage() {
 
     // Optimistic update: add message immediately to the chat UI
     messages.value.push({
-      sender: user.name || "You",
+      senderId: user._id || "You",
       content: message.content,
       type: message.type,
       status: "sending", // track sending status if needed
@@ -179,8 +190,6 @@ function sendMessage() {
   }
 }
 
-
-
 function scrollToBottom() {
   nextTick(() => {
     if (messagesRef.value) {
@@ -191,44 +200,45 @@ function scrollToBottom() {
 
 onMounted(() => {
   if (user) {
-    axios.get(`http://192.168.31.100:4000/user/getAll/${user.appName}`, {
-      headers: {
-        Authorization: `Bearer ${user.fcmToken}`,
-      },
-    }).then((response) => {
-      friends.value = response.data.data;
-    }).catch((error) => {
-      console.error("Error fetching friends:", error);
-    });
+    axios
+      .get(`http://192.168.31.100:4000/user/getAll/${user.appName}`, {
+        headers: {
+          Authorization: `Bearer ${user.fcmToken}`,
+        },
+      })
+      .then((response) => {
+        friends.value = response.data.data;
+      })
+      .catch((error) => {
+        console.error("Error fetching friends:", error);
+      });
 
-    axios.post(`http://192.168.31.100:4000/user/getAllChats`, {
-      userId: user._id,
-    }).then((res) => {
-      chats.value = res.data.data;
-    }).catch((error) => {
-      console.error("Error fetching messages:", error);
-    });
+    axios
+      .post(`http://192.168.31.100:4000/user/getAllChats`, {
+        userId: user._id,
+      })
+      .then((res) => {
+        chats.value = res.data.data;
+      })
+      .catch((error) => {
+        console.error("Error fetching messages:", error);
+      });
   }
 
-
-      // ✅ Listen for messages only once socket is ready
-    socket.on("new_message", (message) => {
-      console.log("📩 New message received:", message);
-      if (activeFriend.value && message.data.chatId === chatId.value) {
-        messages.value.push({
-          sender: message.data.senderId === user._id ? "You" : activeFriend.value.name,
-          content: message.data.content,
-          type: message.data.type,
-          timestamp: new Date().toISOString(), // optional for UI sorting
-        });
-        scrollToBottom();
-      }
-    });
-
-  // ✅ Debug fallback to see ALL socket events
-  // socket.onAny((event, ...args) => {
-  //   console.log("📡 Socket Event:", event, args);
-  // });
+  // ✅ Listen for messages only once socket is ready
+  socket.on("new_message", (message) => {
+    console.log("📩 New message received:", message);
+    if (activeFriend.value && message.data.chatId === chatId.value) {
+      messages.value.push({
+        sender:
+          message.data.senderId === user._id ? "You" : activeFriend.value.name,
+        content: message.data.content,
+        type: message.data.type,
+        timestamp: new Date().toISOString(), // optional for UI sorting
+      });
+      scrollToBottom();
+    }
+  });
 });
 
 onUnmounted(() => {
@@ -236,21 +246,39 @@ onUnmounted(() => {
   socket.off("new_message");
 });
 
-
-
 const createChat = async (friend: any) => {
+  // Emit leave-chat if already in a chat
+  if (chatId.value) {
+    socket.emit(
+      "leave-chat",
+      {
+        chatId: chatId.value,
+        senderId: user._id,
+      },
+      (response) => {
+        console.log("Left previous chat:", response);
+      }
+    );
+  }
   selectFriend(friend);
-  const response = await axios.post('https://chat-module-d7da994f2531.herokuapp.com/user/createChat', {
-    user: user._id,
-    other: friend.other._id,
-  });
-  if(response.status === 200) {
-     socket.emit("join-chat", {
-      chatId: response.data.data.chatId,
-      senderId: user._id
-     }, (response) => {
-      console.log('join chat response', response)
-    });
+  const response = await axios.post(
+    "https://chat-module-d7da994f2531.herokuapp.com/user/createChat",
+    {
+      user: user._id,
+      other: friend.other._id,
+    }
+  );
+  if (response.status === 200) {
+    socket.emit(
+      "join-chat",
+      {
+        chatId: response.data.data.chatId,
+        senderId: user._id,
+      },
+      (response) => {
+        console.log("join chat response", response);
+      }
+    );
     console.log("Chat created successfully", response.data);
     chatId.value = response.data.data.chatId;
     const res = await axios.get(
@@ -264,7 +292,6 @@ const createChat = async (friend: any) => {
   }
 };
 </script>
-
 
 <style scoped>
 .chat-page {
@@ -413,6 +440,29 @@ const createChat = async (friend: any) => {
   border-radius: 8px;
   margin-bottom: 16px;
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Incoming messages (left aligned) */
+.incoming {
+  padding: 4px 10px;
+
+  background-color: #f1f0f0;
+  color: black;
+  align-self: flex-start;
+  border-top-left-radius: 0;
+  width: fit-content;
+  border-radius: 6px;
+}
+
+/* Outgoing messages (right aligned) */
+.outgoing {
+  padding: 4px 10px;
+  background-color: #4f93ff;
+  color: white;
+  align-self: flex-end;
+  margin-left: auto;
+  width: fit-content;
+  border-radius: 6px;
 }
 
 .message {
