@@ -1,7 +1,7 @@
 <template>
   <div class="login-page">
     <div class="login-box">
-      <h2>Login to Chat App</h2>
+      <h2>Login to streamed CHAT</h2>
       <form @submit.prevent="registerUser">
         <input v-model="username" type="text" placeholder="Username" required />
         <input v-model="email" type="email" placeholder="Email" required />
