@@ -20,7 +20,7 @@
             v-for="friend in chats"
             :key="friend.id"
             @click="createChat(friend)"
-            :class="{ active: activeFriend?.other._id === friend.other._id }"
+            :class="{ active: activeFriend?.other && friend.other && activeFriend.other._id === friend.other._id }"
           >
             <div class="avatar">
               <img
@@ -31,8 +31,8 @@
               />
             </div>
             <div v-if="!isMobile || showSidebar" class="friend-info">
-              <strong>{{ friend.other.name }}</strong>
-              <p class="email">{{ friend.other.email }}</p>
+              <strong>{{ friend.other?.name }}</strong>
+              <p class="email">{{ friend.other?.email }}</p>
             </div>
           </div>
         </div>
@@ -93,7 +93,7 @@
               'message',
               {
                 outgoing: msg.senderId === (user._id || 'You'),
-                incoming: msg.sender !== (user._id || 'You'),
+                incoming: msg.senderId !== (user._id || 'You'),
               },
             ]"
           >
@@ -124,12 +124,24 @@ import { ref, nextTick, onMounted, onUnmounted } from "vue";
 import axios from "axios";
 import { io } from "socket.io-client";
 import { useAuthCheck } from "../utils/useAuth";
-import Swal from "sweetalert2";
 
 useAuthCheck();
 
-const friends = ref([]);
-const chats = ref([]);
+interface Friend {
+  id: number;
+  _id?: string;
+  name: string;
+  email: string;
+  profileImage?: string;
+  other?: {
+    _id: string;
+    name?: string;
+    email?: string;
+    profileImage?: string;
+  };
+}
+const friends = ref<Friend[]>([]);
+const chats = ref<Friend[]>([]);
 
 const user = JSON.parse(localStorage.getItem("user") || "{}");
 const chatId = ref("");
@@ -138,9 +150,15 @@ const activeFriend = ref<null | {
   name: string;
   email: string;
   _id?: string;
+  other?: {
+    _id: string;
+    name?: string;
+    email?: string;
+    profileImage?: string;
+  };
 }>(null);
 const newMessage = ref("");
-const messages = ref<{ sender: string; text: string; chatId?: string }[]>([]);
+const messages = ref<{ senderId: string; content: string; chatId?: string; type?: string; timestamp?: string }[]>([]);
 const messagesRef = ref<HTMLElement | null>(null);
 
 const showSidebar = ref(false);
@@ -148,7 +166,7 @@ const isMobile = window.innerWidth <= 1024;
 const appName = "My Chat App";
 
 // Setup socket connection
-const socket = io("http://192.168.31.100:4000");
+const socket = io("http://192.168.31.115:4000");
 
 function selectFriend(friend: typeof activeFriend.value) {
   activeFriend.value = friend;
@@ -162,13 +180,14 @@ function sendMessage() {
     const message = {
       chatId: chatId.value,
       senderId: user._id,
-      receiverId: activeFriend.value.other._id,
+      receiverId: activeFriend.value?.other?._id,
       type: "text",
       content: newMessage.value.trim(),
     };
 
+
     // Emit message via socket with acknowledgement callback
-    socket.emit("send_message", message, (response) => {
+    socket.emit("send_message", message, (response:any) => {
       if (response.status === "ok") {
         console.log("Message sent successfully!");
       } else {
@@ -180,9 +199,7 @@ function sendMessage() {
     messages.value.push({
       senderId: user._id || "You",
       content: message.content,
-      type: message.type,
-      status: "sending", // track sending status if needed
-      timestamp: new Date().toISOString(), // optional for UI sorting
+      chatId: message.chatId,
     });
 
     newMessage.value = "";
@@ -201,7 +218,7 @@ function scrollToBottom() {
 onMounted(() => {
   if (user) {
     axios
-      .get(`http://192.168.31.100:4000/user/getAll/${user.appName}`, {
+      .get(`http://192.168.31.115:4000/user/getAll/${user.appName}`, {
         headers: {
           Authorization: `Bearer ${user.fcmToken}`,
         },
@@ -214,7 +231,7 @@ onMounted(() => {
       });
 
     axios
-      .post(`http://192.168.31.100:4000/user/getAllChats`, {
+      .post(`http://192.168.31.115:4000/user/getAllChats`, {
         userId: user._id,
       })
       .then((res) => {
@@ -230,7 +247,7 @@ onMounted(() => {
     console.log("📩 New message received:", message);
     if (activeFriend.value && message.data.chatId === chatId.value) {
       messages.value.push({
-        sender:
+        senderId:
           message.data.senderId === user._id ? "You" : activeFriend.value.name,
         content: message.data.content,
         type: message.data.type,
@@ -255,7 +272,7 @@ const createChat = async (friend: any) => {
         chatId: chatId.value,
         senderId: user._id,
       },
-      (response) => {
+      (response:any) => {
         console.log("Left previous chat:", response);
       }
     );
@@ -275,14 +292,14 @@ const createChat = async (friend: any) => {
         chatId: response.data.data.chatId,
         senderId: user._id,
       },
-      (response) => {
+      (response:any) => {
         console.log("join chat response", response);
       }
     );
     console.log("Chat created successfully", response.data);
     chatId.value = response.data.data.chatId;
     const res = await axios.get(
-      `http://192.168.31.100:4000/user/getAllMessages/${response.data.data.chatId}`
+      `http://192.168.31.115:4000/user/getAllMessages/${response.data.data.chatId}`
     );
     console.log("Messages fetched:", res.data.data);
     messages.value = res.data.data;
