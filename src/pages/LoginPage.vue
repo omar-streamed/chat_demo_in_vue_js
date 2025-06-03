@@ -26,7 +26,7 @@ const router = useRouter();
 async function registerUser() {
   try {
     const response = await axios.post(
-      "http://192.168.31.100:4000/user/register",
+      "http://192.168.21.113:4000/user/register",
       {
         name: username.value,
         email: email.value,

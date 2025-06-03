@@ -166,7 +166,7 @@ const isMobile = window.innerWidth <= 1024;
 const appName = "My Chat App";
 
 // Setup socket connection
-const socket = io("http://192.168.31.115:4000");
+const socket = io("http://192.168.21.113:4000");
 
 function selectFriend(friend: typeof activeFriend.value) {
   activeFriend.value = friend;
@@ -218,7 +218,7 @@ function scrollToBottom() {
 onMounted(() => {
   if (user) {
     axios
-      .get(`http://192.168.31.115:4000/user/getAll/${user.appName}`, {
+      .get(`http://192.168.21.113:4000/user/getAll/${user.appName}`, {
         headers: {
           Authorization: `Bearer ${user.fcmToken}`,
         },
@@ -231,7 +231,7 @@ onMounted(() => {
       });
 
     axios
-      .post(`http://192.168.31.115:4000/user/getAllChats`, {
+      .post(`http://192.168.21.113:4000/user/getAllChats`, {
         userId: user._id,
       })
       .then((res) => {
@@ -279,7 +279,7 @@ const createChat = async (friend: any) => {
   }
   selectFriend(friend);
   const response = await axios.post(
-    "https://chat-module-d7da994f2531.herokuapp.com/user/createChat",
+    "http://192.168.21.113:4000/user/createChat",
     {
       user: user._id,
       other: friend.other._id,
@@ -296,12 +296,10 @@ const createChat = async (friend: any) => {
         console.log("join chat response", response);
       }
     );
-    console.log("Chat created successfully", response.data);
     chatId.value = response.data.data.chatId;
     const res = await axios.get(
-      `http://192.168.31.115:4000/user/getAllMessages/${response.data.data.chatId}`
+      `http://192.168.21.113:4000/user/getAllMessages/${response.data.data.chatId}`
     );
-    console.log("Messages fetched:", res.data.data);
     messages.value = res.data.data;
     scrollToBottom();
   } else {
